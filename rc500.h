@@ -9,6 +9,10 @@
 #ifndef _RC500_H_
 #define _RC500_H_
 /* RC500 FIFO长度，处理帧长度 */
+/* FSDI   0   1   2   3   4   5   6   7   8   9-F
+ * FSD   16  24  32  40  48  64  96 128 256   RFU
+ */
+#define FSDI 5
 #define FSD 64
 /* RC500寄存器定义 */
 #define RegPage               0x00 /* Page Select Register */
@@ -69,6 +73,13 @@
 #define RFU3E                 0x3E /* RFU */
 #define RegTestDigiAccess     0x3F
 
+#define PCD_IRQ_TIMER	0x20
+#define PCD_IRQ_TX	0x10
+#define PCD_IRQ_RX	0x08
+#define PCD_IRQ_IDLE	0x04
+#define PCD_IRQ_HIALERT	0x02
+#define PCD_IRQ_LOALERT	0x01
+
 /* RC500命令定义 */
 #define PCD_STARTUP	0x3F /* Runs the Reset- and Initialisation Phase. */
 #define PCD_IDLE	0x00 /* No action; cancels current command execution. */
@@ -84,23 +95,6 @@
 #define PCD_LOADCONFIG	0x07 /* Reads data from E2PROM and initialises the MF RC500 registers. */
 #define PCD_CALCCRC	0x12 /* Activates the CRC-Coprocessor. */
 
-/* PICC命令 */
-/* Each tag command is written to the reader IC and transfered via RF */
-#define PICC_REQSTD	0x26 /* request idle */
-#define PICC_REQALL	0x52 /* request all */
-#define PICC_ANTICOLL1	0x93 /* anticollision level 1 */
-#define PICC_ANTICOLL2	0x95 /* anticollision level 2 */
-#define PICC_ANTICOLL3	0x97 /* anticollision level 3 */
-#define PICC_AUTHENT1A	0x60 /* authentication step 1 */
-#define PICC_AUTHENT1B	0x61 /* authentication step 2 */
-#define PICC_READ	0x30 /* read block */
-#define PICC_WRITE	0xA0 /* write block */
-#define PICC_DECREMENT	0xC0 /* decrement value */
-#define PICC_INCREMENT	0xC1 /* increment value */
-#define PICC_RESTORE	0xC2 /* restore command code */
-#define PICC_TRANSFER	0xB0 /* transfer command code */
-#define PICC_HALT	0x50 /* halt */
-
 struct MF_CMD_INFO {
 	unsigned char cmd; /* RC500命令 */
 	unsigned char len; /* 数据长度 */
@@ -108,11 +102,16 @@ struct MF_CMD_INFO {
 	unsigned char coll_pos; /* 冲突位置 */
 };
 
+extern unsigned char PCD_BUF[FSD];
+extern struct MF_CMD_INFO PCD_CMD;
 
 extern unsigned char PCD_read(unsigned char addr);
 extern void PCD_write(unsigned char addr, unsigned char data);
+extern void PCD_bitset(unsigned char addr, unsigned char bits);
+extern void PCD_bitclr(unsigned char addr, unsigned char bits);
 extern int PCD_init(void);
 extern void PCD_get_info(void);
-void PCD_set_timeout(int tmo);
+extern void PCD_set_timeout(int tmo);
+extern int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf);
 
 #endif

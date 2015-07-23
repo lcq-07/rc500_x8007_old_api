@@ -12,6 +12,10 @@
 #include "gpio_bus_comm.h"
 #include "rc500.h"
 
+unsigned char PCD_INFO[16];
+unsigned char PCD_BUF[FSD];
+struct MF_CMD_INFO PCD_CMD;
+
 unsigned char PCD_read(unsigned char addr)
 {
 	return (gpio_bus_read(DEV_RC500, addr));
@@ -137,7 +141,7 @@ int PCD_init(void)
 	int ret;
 
 	ret = PCD_reset();
-	#if 0
+	#if 1
 	if(ret == 0) {
 		/* test clock Q calibration - value in the range of 0x46 expected */
 		PCD_write(RegClockQControl, 0x0);
@@ -155,67 +159,13 @@ int PCD_init(void)
 		PCD_write(RegFIFOLevel, 0x04);   
 		PCD_write(RegTimerControl, 0x02);
 		PCD_write(RegIRqPinConfig, 0x03); 
-		PCD_write(RegTxControl, 0x5b); 
+		PCD_write(RegTxControl, 0x5b);
+		PCD_write(RegCwConductance, 0x3f);
 		PCD_set_timeout(1);
 		PCD_antenna(1);
 	}
 	#endif
 	return ret;
-}
-
-/* 
- * 获取RC500信息
- */
-void PCD_get_info(void)
-{
-	int i;
-	unsigned char product_info[16];
-
-	PCD_write(RegFIFOData, 0);
-	PCD_write(RegFIFOData, 0);
-	PCD_write(RegFIFOData, 16);
-	PCD_write(RegCommand, PCD_READE2);
-
-	for(i=0; i<16; i++) {
-		printk("[%d]", PCD_read(RegFIFOLength));
-		product_info[i] = PCD_read(RegFIFOData);
-		printk("%02X ", product_info[i]);
-	}
-	printk("\n");
-
-	printk("PID: %08X\n", *(unsigned int *)product_info);
-	printk("VER: %02X\n", product_info[4]);
-	printk("PSN: %08X\n", *(unsigned int *)(product_info+8));
-
-	#define _DEBUG_
-	#ifdef _DEBUG_
-	struct timespec clock[2];
-	for(i=1; i<8; i++) {
-		PCD_set_timeout(i);
-		PCD_write(RegInterruptEn, 0x7f);
-		PCD_write(RegInterruptRq, 0x7f);
-		clock[0] = current_kernel_time();
-		PCD_bitset(RegControl, 0x02);
-		printk("tmr:%d\n", PCD_read(RegTimerValue));
-		printk("rld:%d\n", PCD_read(RegTimerReload));
-		printk("ctl:%d\n", PCD_read(RegTimerControl));
-		int cnt;
-		int sta;
-		cnt = 0;
-		while(++cnt) {
-			sta = PCD_read(RegInterruptRq);
-			if(sta&0x20) {
-				break;
-			}
-		}
-		clock[1] = current_kernel_time();
-		printk("clk0:%d %d\n", clock[0].tv_sec, clock[0].tv_nsec);
-		printk("clk1:%d %d\n", clock[1].tv_sec, clock[1].tv_nsec);
-		printk("irq:%02X\n", sta);
-		PCD_bitclr(RegControl, 0x02);
-		printk("%d\n", cnt);
-	}
-	#endif /* _DEBUG_ */
 }
 
 int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
@@ -225,8 +175,6 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 	int cnt;
 	unsigned char irq_en; /* RC500中断源使能 */
 	unsigned char irq_sr; /* RC500中断源 */
-	unsigned char irq_mask; /* RC500中断使能状态 */
-	unsigned char irq_bits; /* RC500中断发生状态 */
 	unsigned char err_flg; /* RC500错误标志 */
 	unsigned char wait_for;
 
@@ -234,43 +182,48 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 		return -1;
 	}
 
+	PCD_write(RegInterruptEn, 0x7F); /* disable all interrupts */
+	PCD_write(RegInterruptRq, 0x7F); /* reset interrupt requests */
+	PCD_write(RegCommand, PCD_IDLE); /* terminate probably running command */
+	PCD_flush_fifo(); /* flush FIFO buffer */
+
 	switch(cmd_info->cmd) {
 	case PCD_STARTUP:
 	case PCD_IDLE:
-		irq_en = 0x00;
-		wait_for = 0x00;
+		irq_en   = PCD_IRQ_TIMER;
+		wait_for = PCD_IRQ_TIMER;
 		break;
 	case PCD_WRITEE2:
-		irq_en = 0x11;
-		wait_for = 0x10;
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_TX | PCD_IRQ_LOALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_TX;
 		break;
 	case PCD_READE2:
-		irq_en = 0x07;
-		wait_for = 0x04;
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_IDLE | PCD_IRQ_HIALERT | PCD_IRQ_LOALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
 		break;
 	case PCD_AUTHENT2:
-		irq_en = 0x04;
-		wait_for = 0x04;
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
 		break;
 	case PCD_CALCCRC:
-		irq_en = 0x11;
-		wait_for = 0x10;
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_TX | PCD_IRQ_LOALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_TX;
 		break;
 	case PCD_RECEIVE:
-		irq_en = 0x06;
-		wait_for = 0x04;
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_IDLE | PCD_IRQ_HIALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
 		break;
 	case PCD_LOADCONFIG:
 	case PCD_LOADKEYE2:
 	case PCD_LOADKEY:
 	case PCD_AUTHENT1:
-	case PCD_TRANSMIT: /* LoAlert and IdleIRq */
-		irq_en = 0x05;
-		wait_for = 0x04;
+	case PCD_TRANSMIT:
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_IDLE | PCD_IRQ_LOALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
 		break;
-	case PCD_TRANSCEIVE: /* TxIrq, RxIrq, IdleIRq and LoAlert */
-		irq_en = 0x3D;
-		wait_for = 0x04;
+	case PCD_TRANSCEIVE:
+		irq_en   = PCD_IRQ_TIMER | PCD_IRQ_TX | PCD_IRQ_RX | PCD_IRQ_IDLE | PCD_IRQ_LOALERT;
+		wait_for = PCD_IRQ_TIMER | PCD_IRQ_IDLE;
 		break;
 	default:
 		status = -1;
@@ -279,37 +232,47 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 
 	if(status == 0) {
 		irq_sr = 0;
-		irq_en |= 0x20 | 0x80; /* always enable timout irq */
-		wait_for |= 0x20; /* always wait for timeout */
-
-		PCD_write(RegInterruptEn, 0x7F); /* disable all interrupts */
-		PCD_write(RegInterruptRq, 0x7F); /* reset interrupt requests */
-		PCD_write(RegCommand, PCD_IDLE); /* terminate probably running command */
-		PCD_flush_fifo(); /* flush FIFO buffer */
-		PCD_write(RegInterruptEn, irq_en);
+		PCD_write(RegInterruptEn, irq_en|0x80);
 		for(cnt=0; cnt<cmd_info->len; cnt++) {
 			PCD_write(RegFIFOData, buf[cnt]);
 		}
-		PCD_write(RegCommand, pcd_cmd); /* start command */
+		PCD_write(RegCommand, cmd_info->cmd); /* start command */
 
-		guard_cnt = 300000;
-		while((guard_cnt--) || !(irq_sr&wait_for)) {
+		guard_cnt = 80000; /* about 800ms */
+		do{
 			irq_sr = PCD_read(RegInterruptRq);
-		}
+			if(irq_sr & wait_for) {
+				break;	
+			}
+		}while(--guard_cnt);
+		printk("irq_sr: %02X\n", irq_sr);
+		printk("wait_for: %02X\n", wait_for);
+		printk("guard_cnt: %d\n", guard_cnt);
 		if(guard_cnt) {
 			err_flg = PCD_read(RegErrorFlag);
 			cmd_info->len = PCD_read(RegFIFOLength);
+			printk("err_flg: %02X\n", err_flg);
+			printk("fifolen: %d\n", cmd_info->len);
 			for(cnt=0; cnt<cmd_info->len; cnt++) {
 				buf[cnt] = PCD_read(RegFIFOData);
+				printk("%02X", buf[cnt]);
+			}
+			printk("\n");
+			if(irq_sr & 0x20) { /* timeout */
+				status = -1;
 			}
 			if(err_flg & 0x17) {
 				status = -1;
 				if(err_flg & 0x01) { /* collision detected */
-					cmd_info->coll_pos = PCD_read(RegCollpos);
+					cmd_info->coll_pos = PCD_read(RegCollPos);
 				}
-			}else if(pcd_cmd == PCD_TRANSCEIVE) {
+			}else if(cmd_info->cmd == PCD_TRANSCEIVE) {
 				/* number of bits in the last byte */
-				cmd_info->recv_bit = ReadIO(RegSecondaryStatus) & 0x07;
+				cmd_info->recv_bit = PCD_read(RegSecondaryStatus) & 0x07;
+				if(cmd_info->recv_bit && cmd_info->len) {
+					cmd_info->len -= 1;
+				}
+				printk("recv_bit: %d\n", cmd_info->recv_bit);
 			}
 		}else {
 			status = -1;
@@ -327,35 +290,95 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 int PCD_read_E2(unsigned short adr, unsigned char len, unsigned char *dat)
 {
 	int i;
+	int ret;
 
-	PCD_write(RegFIFOData, adr&0xff);
-	PCD_write(RegFIFOData, (adr>>8)&0xff);
-	PCD_write(RegFIFOData, len);
-	PCD_write(RegCommand, PCD_READE2);
-
-	for(i=0; i<len; i++) {
-		dat[i] = PCD_read(RegFIFOData);
-		printk("%02X ", dat[i]);
+	if(len>FSD) {
+		return -1;
 	}
 
-	return 0;
+	PCD_CMD.cmd = PCD_READE2;
+	PCD_CMD.len = 3;
+	PCD_BUF[0] = adr&0xff;
+	PCD_BUF[1] = (adr>>8)&0xff;
+	PCD_BUF[2] = len;
+
+	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
+	if(PCD_CMD.len < len) {
+		ret = -1;
+	}
+	if(ret == 0) {
+		for(i=0; i<PCD_CMD.len; i++) {
+			dat[i] = PCD_BUF[i];
+		}
+	}
+
+	return ret;
 }
 
 
 int PCD_write_E2(unsigned short adr, unsigned char len, unsigned char *dat)
 {
 	int i;
+	int ret;
 
-	PCD_write(RegFIFOData, adr&0xff);
-	PCD_write(RegFIFOData, (adr>>8)&0xff);
-	PCD_write(RegFIFOData, len);
-	PCD_write(RegCommand, PCD_WRITEE2);
-
-	for(i=0; i<len; i++) {
-		PCD_write(RegFIFOData, dat[i]);
+	if(len>(FSD-3)) {
+		return -1;
 	}
 
-	return 0;
+	PCD_CMD.cmd = PCD_WRITEE2;
+	PCD_CMD.len = 3+len;
+	PCD_BUF[0] = adr&0xff;
+	PCD_BUF[1] = (adr>>8)&0xff;
+	PCD_BUF[2] = len;
+
+	for(i=0; i<PCD_CMD.len; i++) {
+		PCD_BUF[i+3] = dat[i];
+	}
+	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
+
+	return ret;
+}
+
+/* 
+ * 获取RC500信息
+ */
+void PCD_get_info(void)
+{
+	int ret;
+
+	ret = PCD_read_E2(0, 16, PCD_INFO);
+
+	printk("PID: %08X\n", *(unsigned int *)PCD_INFO);
+	printk("VER: %02X\n", PCD_INFO[4]);
+	printk("PSN: %08X\n", *(unsigned int *)(PCD_INFO+8));
+
+	#if 0
+	struct timespec clock[2];
+	for(i=1; i<8; i++) {
+		PCD_set_timeout(i);
+		PCD_write(RegInterruptEn, 0x7f);
+		PCD_write(RegInterruptRq, 0x7f);
+		clock[0] = current_kernel_time();
+		PCD_bitset(RegControl, 0x02);
+		printk("tmr:%d\n", PCD_read(RegTimerValue));
+		printk("rld:%d\n", PCD_read(RegTimerReload));
+		printk("ctl:%d\n", PCD_read(RegTimerControl));
+		int cnt;
+		cnt = 0;
+		while(++cnt) {
+			sta = PCD_read(RegInterruptRq);
+			if(sta&0x20) {
+				break;
+			}
+		}
+		clock[1] = current_kernel_time();
+		printk("clk0:%d %d\n", clock[0].tv_sec, clock[0].tv_nsec);
+		printk("clk1:%d %d\n", clock[1].tv_sec, clock[1].tv_nsec);
+		printk("irq:%02X\n", sta);
+		PCD_bitclr(RegControl, 0x04);
+		printk("%d\n", cnt);
+	}
+	#endif /* _DEBUG_ */
 }
 
 

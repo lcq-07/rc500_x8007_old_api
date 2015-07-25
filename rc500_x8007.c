@@ -9,33 +9,100 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
-#include <linux/miscdevice.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
 #include "rc500_x8007.h"
 #include "gpio_bus_comm.h"
 #include "rc500.h"
+#include "ISO7816.h"
 #include "ISO14443_3A.h"
 #include "ISO14443_4A.h"
 
-#define DEVICE_NAME "SC0"
+static dev_t dev_no = 0;
+static struct cdev *scr_dev[SC_READER_MAX];
+static struct class *scr_class;
+static unsigned char *scr_buf[SC_READER_MAX];
 
-static int dev_open(struct inode *inode,struct file *filp)
+static int dev_open(struct inode *inode, struct file *filp)
 {
-	return 0;
+	int ret;
+	int cur_dev_major = imajor(inode);
+	int cur_dev_minor = iminor(inode);
+
+	switch(cur_dev_minor) { 
+	case SC_READER_MIN+0: /* MFRC500 */
+		ret = PCD_init();
+		scr_buf[cur_dev_minor - SC_READER_MIN] = kmalloc(sizeof(struct APDU_MSG),GFP_KERNEL);
+		if(scr_buf[cur_dev_minor - SC_READER_MIN] == NULL) {
+			printk(KERN_NOTICE "kmalloc fail!\n");
+			ret = -1;
+		}
+	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
+		ret = 0;
+		break;
+	default:
+		ret = 0;
+		break;
+	}
+	if(ret == 0) {
+		printk(KERN_NOTICE SC_READER"[%d:%d] open ok!\n", cur_dev_major, cur_dev_minor);
+	}else {
+		printk(KERN_NOTICE SC_READER"[%d:%d] open fail!\n", cur_dev_major, cur_dev_minor);
+	}
+	filp->private_data = inode;
+
+	return ret;
 }
 
-static int dev_close(struct inode *inode,struct file *filp)
+static int dev_close(struct inode *inode, struct file *filp)
 {
+	int ret;
+	int cur_dev_major = imajor(inode);
+	int cur_dev_minor = iminor(inode);
+
+	switch(cur_dev_minor) { 
+	case SC_READER_MIN+0: /* MFRC500 */
+		if(scr_buf[cur_dev_minor - SC_READER_MIN] != NULL) {
+			kfree(scr_buf[cur_dev_minor - SC_READER_MIN]);
+		}
+	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
+		ret = 0;
+		break;
+	default:
+		ret = 0;
+		break;
+	}
+	printk(KERN_NOTICE SC_READER"[%d:%d] close ok!\n", cur_dev_major, cur_dev_minor);
+
 	return 0;
 }
 
 static ssize_t dev_read(struct file *filp, char __user *buf, size_t size, loff_t *offset)
 {
-	return 0;
+	return size;
 }
 
 static ssize_t dev_write(struct file *filp, const char __user *buf, size_t size, loff_t *offset)
 {
-	return 0;
+	int ret;
+	int cur_dev_major = imajor(filp->private_data);
+	int cur_dev_minor = iminor(filp->private_data);
+
+	switch(cur_dev_minor) { 
+	case SC_READER_MIN+0: /* MFRC500 */
+		
+		if(scr_buf[cur_dev_minor - SC_READER_MIN] != NULL) {
+			kfree(scr_buf[cur_dev_minor - SC_READER_MIN]);
+		}
+	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
+		ret = 0;
+		break;
+	default:
+		ret = 0;
+		break;
+	}
+
+	return size;
 }
 
 static struct file_operations dev_fops = {
@@ -46,143 +113,71 @@ static struct file_operations dev_fops = {
 	.write   = dev_write,
 };
 
-
-static struct miscdevice misc = {
-	.minor = MISC_DYNAMIC_MINOR,
-	.name = DEVICE_NAME,
-	.fops = &dev_fops,
-};
-
 static int __init dev_init(void)
 {
 	int ret;
 	int i;
 	int j;
 	unsigned char ATQ[2];
-	unsigned char sbuf[256];
-	unsigned char rbuf[256];
+
+	ret = alloc_chrdev_region(&dev_no, SC_READER_MIN, SC_READER_MAX, SC_READER);
+	if (ret < 0) {
+		printk(KERN_WARNING "smard card reader: device number registration failed\n");
+		return 0;
+	}
+	printk(KERN_NOTICE "dev no[%d:%d]\n", MAJOR(dev_no), MINOR(dev_no));
+	scr_class = class_create(THIS_MODULE, SC_READER);
+	if(!scr_class) {
+		printk(KERN_WARNING "smard card reader: class_create failed\n");
+		goto init_fail;
+	}
+
+	for(i=0; i<SC_READER_MAX; i++) {
+		scr_dev[i] = cdev_alloc();
+		if(!scr_dev[i]) {
+			printk(KERN_WARNING "smard card reader: cdev_alloc failed\n");
+			goto init_fail;
+		}
+		cdev_init(scr_dev[i], &dev_fops);
+		scr_dev[i]->owner = THIS_MODULE;
+		scr_dev[i]->ops = &dev_fops;
+		ret = cdev_add(scr_dev[i], MKDEV(MAJOR(dev_no), SC_READER_MIN+i), 1);
+		if(ret) {
+			printk(KERN_NOTICE "Error %d adding smard card reader\n", ret);
+			goto init_fail;
+		}
+		device_create(scr_class, NULL, MKDEV(MAJOR(dev_no), SC_READER_MIN+i), NULL, SC_READER"%d", SC_READER_MIN+i);
+	}
 
 	gpio_bus_init();
-	ret = PCD_init();
-	if(ret == 0) {
-		printk("RC500 init OK.\n");
-	}else {
-		printk("RC500 init failed.\n");
-	}
-	PCD_get_info();
-	mdelay(300);
-	i = 3;
-	while(--i) {	
-	PICC_request(0x52, ATQ);
-	PICC_anticoll(PICC_UID);
-	PICC_select(PICC_UID, NULL);
-	PICC_rats(NULL, &ret);
-	sbuf[0] = 0x00;
-	sbuf[1] = 0xA4;
-	sbuf[2] = 0x04;
-	sbuf[3] = 0x00;
-	sbuf[4] = 0x0E;
-	sbuf[5] = 0x32;
-	sbuf[6] = 0x50;
-	sbuf[7] = 0x41;
-	sbuf[8] = 0x59;
-	sbuf[9] = 0x2E;
-	sbuf[10] = 0x53;
-	sbuf[11] = 0x59;
-	sbuf[12] = 0x53;
-	sbuf[13] = 0x2E;
-	sbuf[14] = 0x44;
-	sbuf[15] = 0x44;
-	sbuf[16] = 0x46;
-	sbuf[17] = 0x30;
-	sbuf[18] = 0x31;
-	j = 19;
-	ret = PICC_tcl(sbuf, rbuf, &j);
-	if(ret == 0) {
-		for(ret=0; ret<j; ret++) {
-			printk("%02X", rbuf[ret]);
+	return 0;
+init_fail:
+	for(i=0; i<SC_READER_MAX; i++) {
+		if(scr_dev[i]) {
+			device_destroy(scr_class, MKDEV(MAJOR(dev_no), SC_READER_MIN+i));
+			cdev_del(scr_dev[i]);
 		}
-		printk("\n");
 	}
-	sbuf[0] = 0x00;
-	sbuf[1] = 0xA4;
-	sbuf[2] = 0x04;
-	sbuf[3] = 0x00;
-	sbuf[4] = 0x08;
-	sbuf[5] = 0xA0;
-	sbuf[6] = 0x00;
-	sbuf[7] = 0x00;
-	sbuf[8] = 0x03;
-	sbuf[9] = 0x33;
-	sbuf[10] = 0x01;
-	sbuf[11] = 0x01;
-	sbuf[12] = 0x01;
-	j = 13;
-	ret = PICC_tcl(sbuf, rbuf, &j);
-	if(ret == 0) {
-		for(ret=0; ret<j; ret++) {
-			printk("%02X", rbuf[ret]);
-		}
-		printk("\n");
-	}
-	PICC_deselect();
-	PICC_deselect();
-#if 0
-	//PICC_MFauth(0x60, 3, "\xA0\xA1\xA2\xA3\xA4\xA5");
-	PICC_MFauth(0x61, 3, "\xFF\xFF\xFF\xFF\xFF\xFF");
-	PICC_MFread(0, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	PICC_MFread(1, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	PICC_MFread(2, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	//PICC_MFauth(0x61, 3, "\xFF\xFF\xFF\xFF\xFF\xFF");
-	//PICC_MFwrite(0, "\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF");
-	PICC_MFwrite(1, "\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\xBB\xBC\xBD\xBE\xBF");
-	PICC_MFwrite(2, "\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\xCE\xCF");
-	PICC_MFread(0, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	PICC_MFread(1, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	PICC_MFread(2, NULL);
-	for(ret=0; ret<16; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-#endif
-	printk("\n");
-	//PICC_halt();
-	}
-
-	ret = misc_register(&misc);
-
-	if(ret == 0) {
-		printk("ISO14443 ISO7816 modules init OK.\n");
-	}else {
-		printk("ISO14443 ISO7816 modules init failed.\n");
-	}
+	unregister_chrdev_region(MKDEV(MAJOR(dev_no), SC_READER_MIN), SC_READER_MAX);
+	class_destroy(scr_class);
 
 	return ret;
 }
 
 static void __exit dev_exit(void)
-{ 
+{
+	int i;
+
+	for(i=0; i<SC_READER_MAX; i++) {
+		if(scr_dev[i]) {
+			device_destroy(scr_class, MKDEV(MAJOR(dev_no), SC_READER_MIN+i));
+			cdev_del(scr_dev[i]);
+		}
+	}
+	unregister_chrdev_region(MKDEV(MAJOR(dev_no), SC_READER_MIN), SC_READER_MAX);
+	class_destroy(scr_class);
+
 	gpio_bus_release();
-	misc_deregister(&misc);
 }
 
 module_init(dev_init);

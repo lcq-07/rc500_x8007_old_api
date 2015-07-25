@@ -90,6 +90,9 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 	while(ret == 0) {
 		if((PCD_BUF[0] & 0xF0) == 0x00) {
 		/* 通讯结束 */
+			if((PCD_BUF[0]&0x01) == block_number) {
+				block_number = !block_number;
+			}
 			for(cnt=2; cnt<PCD_CMD.len; cnt++) {
 				*prbuf++ = PCD_BUF[cnt];
 			}
@@ -102,6 +105,9 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 		}
 		if((PCD_BUF[0] & 0xF0) == 0xA0) {
 		/* 发送后续数据 */
+			if((PCD_BUF[0]&0x01) == block_number) {
+				block_number = !block_number;
+			}
 			send_len = FSD - 2;
 			if(remain_len <= send_len) {
 			/* 最后一块，清chaining位*/
@@ -117,13 +123,15 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 			for(cnt=0; cnt< send_len; cnt++) {
 				PCD_BUF[2+cnt] = *psbuf++;
 			}
-			block_number = !block_number;
 			PCD_CMD.cmd = PCD_TRANSCEIVE;
 			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 			continue;
 		}
 		if((PCD_BUF[0] & 0xF0) == 0x10) {
 		/* 接收后续数据 */
+			if((PCD_BUF[0]&0x01) == block_number) {
+				block_number = !block_number;
+			}
 			for(cnt=2; cnt<PCD_CMD.len; cnt++) {
 				*prbuf++ = PCD_BUF[cnt];
 			}

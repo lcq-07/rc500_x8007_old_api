@@ -45,7 +45,7 @@ void gpio_bus_init(void)
 	TDA8007B_WR(SET_HI);
 	TDA8007B_RD(SET_HI);
 	TDA8007B_ALE(SET_HI);
-	TDA8007B_OUT_AD(0xff);
+	TDA8007B_OUT_AD(0x00);
 	RC500_CS(SET_HI);
 }
 
@@ -60,7 +60,7 @@ void gpio_bus_release(void)
 	TDA8007B_WR(SET_HI);
 	TDA8007B_RD(SET_HI);
 	TDA8007B_ALE(SET_HI);
-	TDA8007B_OUT_AD(0xff);
+	TDA8007B_OUT_AD(0x00);
 	iounmap(gpgcon);
 	iounmap(gpbcon);
 }
@@ -76,31 +76,34 @@ unsigned char gpio_bus_read(char device_type, char addr)
 		ndelay(25);
 		RC500_ALE(SET_LO);
 		ndelay(8);
-
+		RC500_SET_IN();
 		RC500_CS(SET_LO); 
 		RC500_RD(SET_LO); /* >=65ns */
 		RC500_IN_AD(data);
 		ndelay(70);
 		RC500_RD(SET_HI);
 		RC500_CS(SET_HI);
-
+		RC500_SET_OUT();
 		RC500_OUT_AD(0);
 		break;
 	case DEV_TDA8007B:
 		RC500_CS(SET_HI);
 		TDA8007B_WR(SET_HI);
 		TDA8007B_RD(SET_HI);
+		TDA8007B_SET_OUT();
 		TDA8007B_ALE(SET_LO);
 		TDA8007B_CS(SET_LO);
 		TDA8007B_OUT_AD(addr);
 		TDA8007B_ALE(SET_HI);
 		TDA8007B_ALE(SET_LO);
+		TDA8007B_SET_IN();
 		TDA8007B_RD(SET_LO);
 		TDA8007B_IN_AD(data);
 		TDA8007B_RD(SET_HI);
 		TDA8007B_ALE(SET_HI);
 		TDA8007B_CS(SET_HI);
-		TDA8007B_OUT_AD(0xff);
+		TDA8007B_SET_OUT();
+		TDA8007B_OUT_AD(0);
 		break;
 	default :
 		break;
@@ -117,10 +120,9 @@ void gpio_bus_write(char device_type, char addr, char data)
 		ndelay(25);
 		RC500_ALE(SET_LO);
 		ndelay(8);
-
 		RC500_CS(SET_LO); 
-		RC500_WR(SET_LO); /* >=65ns */
 		RC500_OUT_AD(data);
+		RC500_WR(SET_LO); /* >=65ns */
 		ndelay(70);
 		RC500_WR(SET_HI);
 		RC500_CS(SET_HI);
@@ -129,6 +131,7 @@ void gpio_bus_write(char device_type, char addr, char data)
 		RC500_CS(SET_HI);
 		TDA8007B_WR(SET_HI);
 		TDA8007B_RD(SET_HI);
+		TDA8007B_SET_OUT();
 		TDA8007B_ALE(SET_LO);
 		TDA8007B_CS(SET_LO);
 		TDA8007B_OUT_AD(addr);

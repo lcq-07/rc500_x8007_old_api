@@ -11,6 +11,8 @@
 #include <linux/delay.h>
 #include "gpio_bus_comm.h"
 #include "rc500.h"
+#include "ISO14443_3A.h"
+#include "ISO14443_4A.h"
 
 unsigned char PCD_INFO[16];
 unsigned char PCD_BUF[FSD];
@@ -236,7 +238,9 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 		PCD_write(RegInterruptEn, irq_en|0x80);
 		for(cnt=0; cnt<cmd_info->len; cnt++) {
 			PCD_write(RegFIFOData, buf[cnt]);
+			printk("%02X", buf[cnt]);
 		}
+		printk("\n");
 		PCD_write(RegCommand, cmd_info->cmd); /* start command */
 
 		guard_cnt = 80000; /* about 800ms */
@@ -246,14 +250,16 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 				break;	
 			}
 		}while(--guard_cnt);
+		err_flg = PCD_read(RegErrorFlag);
+		cmd_info->len = PCD_read(RegFIFOLength);
+		#if 1
+		printk("err_flg: %02X\n", err_flg);
+		printk("fifolen: %d\n", cmd_info->len);
 		printk("irq_sr: %02X\n", irq_sr);
 		printk("wait_for: %02X\n", wait_for);
 		printk("guard_cnt: %d\n", guard_cnt);
+		#endif
 		if(guard_cnt) {
-			err_flg = PCD_read(RegErrorFlag);
-			cmd_info->len = PCD_read(RegFIFOLength);
-			printk("err_flg: %02X\n", err_flg);
-			printk("fifolen: %d\n", cmd_info->len);
 			for(cnt=0; cnt<cmd_info->len; cnt++) {
 				buf[cnt] = PCD_read(RegFIFOData);
 				printk("%02X", buf[cnt]);
@@ -273,7 +279,6 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 				if(cmd_info->recv_bit && cmd_info->len) {
 					cmd_info->len -= 1;
 				}
-				printk("recv_bit: %d\n", cmd_info->recv_bit);
 			}
 		}else {
 			status = -1;
@@ -284,7 +289,6 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 		PCD_bitset(RegControl, 0x04); /* stop timer */
 		PCD_write(RegCommand, PCD_IDLE); 
 	}
-
 	return status;
 }
 
@@ -343,7 +347,7 @@ int PCD_write_E2(unsigned short adr, unsigned char len, unsigned char *dat)
 /* 
  * 获取RC500信息
  */
-void PCD_get_info(void)
+int PCD_get_info(void)
 {
 	int ret;
 
@@ -380,6 +384,136 @@ void PCD_get_info(void)
 		printk("%d\n", cnt);
 	}
 	#endif /* _DEBUG_ */
+
+	return ret;
+}
+
+/* RC500总入口 */
+int sendtoRC500(TranSciveBuffer *send, TranSciveBuffer *receive)
+{
+	int ret = 0;
+  
+	receive->MfCommand = send->MfCommand;
+	receive->MfCtlFlag = send->MfCtlFlag;
+	receive->MfSector  = send->MfSector;
+	switch(send->MfCommand) {
+	case 0x10: /* 初始化RC500 */
+		ret = PCD_init();
+		if(ret == 0) {
+			receive->MfLength = 0x0;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x36: /* 响应天线命令 */
+		PCD_antenna(send->MfCtlFlag);
+		ret = 0x00;
+		receive->MfLength = 0x0;
+		receive->MfStatus = 0x00;
+		break;
+	case 0x37: /* 响应寻A卡命令，返回ATQ */
+		ret = PICC_request(send->MfCtlFlag, receive->MfData);
+		if(ret == 0x00) {
+			receive->MfLength = 0x2;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x38: /* 响应A卡防冲突命令，返回UID */
+		ret = PICC_anticoll(receive->MfData); /*  则执行防冲突检测*/
+		if(ret == 0x00) {
+			receive->MfLength = 0x4;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x39: /* 响应A卡锁定命令，返回SAK */
+		ret = PICC_select(send->MfData, receive->MfData);
+		if(ret == 0x00){
+			receive->MfLength = 0x1;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x29: /* 响应A卡HALT命令*/
+		ret = PICC_halt();
+		if(ret == 0x00) {
+			receive->MfLength = 0x0;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x4A:  /* 响应A卡密钥验证命令 */
+		ret = PICC_MFauth(send->MfCtlFlag, send->MfSector, send->MfData);
+		if(ret == 0x00) {
+			receive->MfLength = 0x0;
+			receive->MfStatus = 0x00;
+		}
+		break; 
+	case 0x4B: /* 响应读M1卡命令 */
+		ret = PICC_MFread(send->MfSector, receive->MfData);
+		if(ret == 0x00) {
+			receive->MfLength = 0x10;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	case 0x4C: /*  响应写M1卡命令 */
+		ret = PICC_MFwrite(send->MfSector, send->MfData);
+		if(ret == 0x00) {
+			receive->MfLength = 0x0;
+			receive->MfStatus = 0x00;
+		}
+		break;
+	#if 0
+	case 0x4D: /*  响应初始化钱包命令,写M1卡块 */
+	ComM1Initval();
+		break; 
+					
+	case 0x4E: /*  响应读钱包命令 */
+	ComM1Readval();
+		break;
+					
+	case 0x4F: /*  响应扣款命令 */
+	ComM1Decrement();
+		break;
+					
+	case 0x50: /*  响应充值命令 */
+	ComM1Increment();
+		break;
+					
+	case 0x51: /*  响应M1卡备份钱包命令*/
+	  ComM1BakValue();
+		break;
+	case 0x52:  /* 响应UltraLight卡的防冲突命令 */
+		ComUL_PcdAnticoll();
+		break;
+					
+	case 0x53: /*  响应写UltraLight卡命令*/
+		if(0x00 == UL_PcdWrite(send->MfSector,send->MfData))
+			ret = 0;
+		else
+			ret = -1;
+		break;  
+	#endif						
+	case 0x54: /* RATS命令 */
+		ret = PICC_rats(receive->MfData, &receive->MfLength);
+		if(ret == 0x00) {
+			receive->MfStatus = 0x00;
+		}
+		break; 
+	case 0x55: /* 响应T=CL卡COS命令*/
+		ret = PICC_tcl(send->MfData, receive->MfData, &send->MfLength);
+		if(ret == 0x00) {
+			receive->MfLength = send->MfLength;
+			receive->MfStatus = 0x00;
+		}else {
+			receive->MfLength = 0x00;
+		}
+		break;
+	case 0x56: /* DESELECT命令 */
+		ret = PICC_deselect();
+		break;
+	default:
+		ret = -1;
+		break;
+
+	}  
+	return ret;
 }
 
 

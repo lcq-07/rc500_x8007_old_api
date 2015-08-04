@@ -46,8 +46,10 @@
 #define RC500_WR(n)	{*gpbdat = ((*gpbdat & ~(0x1<<10))|(n<<10));}
 #define RC500_RD(n)	{*gpbdat = ((*gpbdat & ~(0x1<<9))|(n<<9));}
 #define RC500_ALE(n)	{*gpbdat = ((*gpbdat & ~(0x1<<8))|(n<<8));}
-#define RC500_IN_AD(n)	{*gpbcon = ((*gpbcon&~(0xffff<<0))); ndelay(2); n = *gpbdat & 0xff;}
-#define RC500_OUT_AD(n)	{*gpbcon = ((*gpbcon&~(0xffff<<0))|(0x5555<<0)); ndelay(2); *gpbdat = ((*gpbdat & ~(0xff)) | (n&0xff));}
+#define RC500_SET_IN()	{*gpbcon = ((*gpbcon&~(0xffff<<0)));}
+#define RC500_SET_OUT()	{*gpbcon = ((*gpbcon&~(0xffff<<0))|(0x5555<<0));}
+#define RC500_IN_AD(n)	{n = *gpbdat & 0xff;}
+#define RC500_OUT_AD(n)	{*gpbdat = ((*gpbdat & ~(0xff)) | (n&0xff));}
 
 
 #define TDA8007B_GPIO_INIT() {*gpgcon = ((*gpgcon&~(0x3<<14))|(0x1<<14));\
@@ -59,8 +61,15 @@
 #define TDA8007B_WR(n)		{*gpbdat = ((*gpbdat & ~(0x1<<10))|(n<<10));}
 #define TDA8007B_RD(n)		{*gpbdat = ((*gpbdat & ~(0x1<<9))|(n<<9));}
 #define TDA8007B_ALE(n)		{*gpbdat = ((*gpbdat & ~(0x1<<8))|(n<<8));}
+#define TDA8007B_SET_IN()	{*gpbcon = ((*gpbcon&~(0xffff<<0)));}
+#define TDA8007B_SET_OUT()	{*gpbcon = ((*gpbcon&~(0xffff<<0))|(0x5555<<0));}
+#if 1
+#define TDA8007B_IN_AD(n)	{n = *gpbdat & 0xff;}
+#define TDA8007B_OUT_AD(n)	{*gpbdat = ((*gpbdat & ~(0xff)) | (n&0xff));}
+#else
 #define TDA8007B_IN_AD(n)	{*gpbcon = ((*gpbcon&~(0xffff<<0))); n = *gpbdat & 0xff;}
-#define TDA8007B_OUT_AD(n)	{*gpbcon = ((*gpbcon&~(0xffff<<0))|(0x5555<<0)); *gpbdat = ((*gpbdat & ~(0xff)) | (n&0xff));}
+#define TDA8007B_OUT_AD(n)	{ *gpbdat = ((*gpbdat & ~(0xff)) | (n&0xff)); *gpbcon = ((*gpbcon&~(0xffff<<0))|(0x5555<<0));}
+#endif
 
 extern volatile unsigned int *gpbcon;
 extern volatile unsigned int *gpbdat;

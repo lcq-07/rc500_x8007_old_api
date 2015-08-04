@@ -11,98 +11,118 @@
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/miscdevice.h>
+#include <asm/uaccess.h> /* copy_to/from_user */
 #include "rc500_x8007.h"
 #include "gpio_bus_comm.h"
 #include "rc500.h"
+#include "x8007.h"
 #include "ISO7816.h"
 #include "ISO14443_3A.h"
 #include "ISO14443_4A.h"
 
-static dev_t dev_no = 0;
-static struct cdev *scr_dev[SC_READER_MAX];
-static struct class *scr_class;
-static unsigned char *scr_buf[SC_READER_MAX];
+#define DEVICE_NAME "CST-RC500"
+
+#define SELECT_TDA8007B	0xff
+#define SELECT_RC500	0x00
+
+static struct semaphore open_close;
+static struct semaphore read_write;
+TranSciveBuffer command;  /* RC500一次操作成功后的返回结果 */
+static char select_dev;
+
 
 static int dev_open(struct inode *inode, struct file *filp)
 {
 	int ret;
-	int cur_dev_major = imajor(inode);
-	int cur_dev_minor = iminor(inode);
 
-	switch(cur_dev_minor) { 
-	case SC_READER_MIN+0: /* MFRC500 */
+	ret = down_trylock(&open_close);  /* 判断是否已经被其他进程所使用 */
+	if(ret) { /* 获取失败 */
+		return -1;
+	}else {   /* 获取成功 */
+		#if 1
 		ret = PCD_init();
-		scr_buf[cur_dev_minor - SC_READER_MIN] = kmalloc(sizeof(struct APDU_MSG),GFP_KERNEL);
-		if(scr_buf[cur_dev_minor - SC_READER_MIN] == NULL) {
-			printk(KERN_NOTICE "kmalloc fail!\n");
-			ret = -1;
+		if(ret != 0) {
+			up(&open_close);//添加代码
+			return -1;
 		}
-	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
-		ret = 0;
-		break;
-	default:
-		ret = 0;
-		break;
+		#endif
+		tda8007b_open(NULL, NULL);
+		return 0;
 	}
-	if(ret == 0) {
-		printk(KERN_NOTICE SC_READER"[%d:%d] open ok!\n", cur_dev_major, cur_dev_minor);
-	}else {
-		printk(KERN_NOTICE SC_READER"[%d:%d] open fail!\n", cur_dev_major, cur_dev_minor);
-	}
-	filp->private_data = inode;
-
-	return ret;
 }
 
 static int dev_close(struct inode *inode, struct file *filp)
 {
-	int ret;
-	int cur_dev_major = imajor(inode);
-	int cur_dev_minor = iminor(inode);
-
-	switch(cur_dev_minor) { 
-	case SC_READER_MIN+0: /* MFRC500 */
-		if(scr_buf[cur_dev_minor - SC_READER_MIN] != NULL) {
-			kfree(scr_buf[cur_dev_minor - SC_READER_MIN]);
-		}
-	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
-		ret = 0;
-		break;
-	default:
-		ret = 0;
-		break;
-	}
-	printk(KERN_NOTICE SC_READER"[%d:%d] close ok!\n", cur_dev_major, cur_dev_minor);
-
+	PCD_antenna(0);
+	up(&open_close);
 	return 0;
 }
 
-static ssize_t dev_read(struct file *filp, char __user *buf, size_t size, loff_t *offset)
+/* read调用成功返回读到的字节数,读到尾端返回0,出错返回-1. */
+static ssize_t dev_read(struct file *filp, char __user *buf, size_t count, loff_t *ppos)
 {
-	return size;
+	int ret = 0;
+	unsigned char length;
+	unsigned char str[256];
+
+	down_interruptible(&read_write);
+	str[0] = command.MfCommand;
+	str[1] = command.MfCtlFlag;
+	str[2] = command.MfSector;
+	str[3] = command.MfLength;
+	memcpy(&str[4], command.MfData, command.MfLength);
+	str[command.MfLength+4] = command.MfStatus;
+	length = command.MfLength + 5;
+
+	/* copy_to_user:若拷贝成功返回0,失败返回未拷贝的字节数 */
+	ret = copy_to_user(buf, (void *)str, length);
+	if(ret) { /* 若未拷贝完全 */
+		ret = -1; /* 返回-1,表示执行失败 */
+	}else {
+		ret = length;
+	}
+	up(&read_write);
+	return ret;
 }
 
-static ssize_t dev_write(struct file *filp, const char __user *buf, size_t size, loff_t *offset)
+/* write写成功返回写入的字节数,若失败则返回-1 */
+static ssize_t dev_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
-	int ret;
-	int cur_dev_major = imajor(filp->private_data);
-	int cur_dev_minor = iminor(filp->private_data);
+	int ret = -1;
+	unchar str[256];
+	TranSciveBuffer send;
 
-	switch(cur_dev_minor) { 
-	case SC_READER_MIN+0: /* MFRC500 */
-		
-		if(scr_buf[cur_dev_minor - SC_READER_MIN] != NULL) {
-			kfree(scr_buf[cur_dev_minor - SC_READER_MIN]);
-		}
-	case SC_READER_MIN+1: /* TDA8007B(DS8007) */
-		ret = 0;
-		break;
-	default:
-		ret = 0;
-		break;
+
+	down_interruptible(&read_write);
+	ret = copy_from_user(&str, buf, count);
+	if(ret != 0){
+		up(&read_write);
+		return -1;  /* 出错返回 */
 	}
-
-	return size;
+	/* write by tda8007b */
+	select_dev = str[0];
+	if(select_dev == SELECT_TDA8007B) {
+		ret = tda8007b_write(filp, str, count, ppos);
+	}else {
+	/* write by rc500 */
+		memset(&command, 0, sizeof(TranSciveBuffer));
+		send.MfCommand = str[0];
+		send.MfCtlFlag = str[1];
+		send.MfSector  = str[2];
+		send.MfLength  = str[3];
+		memcpy(send.MfData, &str[4], str[3]);
+		send.MfStatus  = str[str[3]+4];
+		ret = sendtoRC500(&send, &command);
+		if(ret == 0) {
+			ret = count;  /* 返回已写字节数,表示写入成功. */
+		}else {
+			ret = -1;  /* 返回写失败 */
+		}
+	}
+	up(&read_write);
+  
+	return ret;
 }
 
 static struct file_operations dev_fops = {
@@ -113,71 +133,34 @@ static struct file_operations dev_fops = {
 	.write   = dev_write,
 };
 
+static struct miscdevice misc = {
+	.minor = MISC_DYNAMIC_MINOR, /* 动态分配混杂设备次设备号 */
+	.name = DEVICE_NAME,
+	.fops = &dev_fops,  /* 关联文件操作 */
+};
+
 static int __init dev_init(void)
 {
 	int ret;
-	int i;
-	int j;
-	unsigned char ATQ[2];
-
-	ret = alloc_chrdev_region(&dev_no, SC_READER_MIN, SC_READER_MAX, SC_READER);
-	if (ret < 0) {
-		printk(KERN_WARNING "smard card reader: device number registration failed\n");
-		return 0;
-	}
-	printk(KERN_NOTICE "dev no[%d:%d]\n", MAJOR(dev_no), MINOR(dev_no));
-	scr_class = class_create(THIS_MODULE, SC_READER);
-	if(!scr_class) {
-		printk(KERN_WARNING "smard card reader: class_create failed\n");
-		goto init_fail;
-	}
-
-	for(i=0; i<SC_READER_MAX; i++) {
-		scr_dev[i] = cdev_alloc();
-		if(!scr_dev[i]) {
-			printk(KERN_WARNING "smard card reader: cdev_alloc failed\n");
-			goto init_fail;
-		}
-		cdev_init(scr_dev[i], &dev_fops);
-		scr_dev[i]->owner = THIS_MODULE;
-		scr_dev[i]->ops = &dev_fops;
-		ret = cdev_add(scr_dev[i], MKDEV(MAJOR(dev_no), SC_READER_MIN+i), 1);
-		if(ret) {
-			printk(KERN_NOTICE "Error %d adding smard card reader\n", ret);
-			goto init_fail;
-		}
-		device_create(scr_class, NULL, MKDEV(MAJOR(dev_no), SC_READER_MIN+i), NULL, SC_READER"%d", SC_READER_MIN+i);
-	}
 
 	gpio_bus_init();
-	return 0;
-init_fail:
-	for(i=0; i<SC_READER_MAX; i++) {
-		if(scr_dev[i]) {
-			device_destroy(scr_class, MKDEV(MAJOR(dev_no), SC_READER_MIN+i));
-			cdev_del(scr_dev[i]);
-		}
-	}
-	unregister_chrdev_region(MKDEV(MAJOR(dev_no), SC_READER_MIN), SC_READER_MAX);
-	class_destroy(scr_class);
 
+	ret = misc_register(&misc);
+
+	if(ret == 0){
+		init_MUTEX(&read_write);
+		init_MUTEX(&open_close);
+		printk("Insmod RC500 OK.\n");
+	}else {
+		printk("Insmod RC500 failed.\n");
+	}
 	return ret;
 }
 
 static void __exit dev_exit(void)
 {
-	int i;
-
-	for(i=0; i<SC_READER_MAX; i++) {
-		if(scr_dev[i]) {
-			device_destroy(scr_class, MKDEV(MAJOR(dev_no), SC_READER_MIN+i));
-			cdev_del(scr_dev[i]);
-		}
-	}
-	unregister_chrdev_region(MKDEV(MAJOR(dev_no), SC_READER_MIN), SC_READER_MAX);
-	class_destroy(scr_class);
-
 	gpio_bus_release();
+	misc_deregister(&misc);
 }
 
 module_init(dev_init);

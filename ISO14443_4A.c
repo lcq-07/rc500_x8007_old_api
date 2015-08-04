@@ -28,15 +28,22 @@ int PICC_rats(unsigned char *pATS, int *ATS_len)
 	PCD_BUF[0] = 0xE0;
 	PCD_BUF[1] = (FSDI<<4) | 0x00; /* FSDI | CID */
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
+	#if 1
 	printk("RATS ret: %d len: %d  ", ret, PCD_CMD.len);
-
-	if(ret == 0) {
+	#endif
+	if((ret == 0) && (PCD_CMD.len > 0)) {
 		//PCD_write(RegRxWait, 0x00);
 		for(*ATS_len=0; *ATS_len<PCD_CMD.len; (*ATS_len)++) {
-			//pATS[*ATS_len] = PCD_BUF[*ATS_len];
+			pATS[*ATS_len] = PCD_BUF[*ATS_len];
+			#if 1
 			printk("%02X", PCD_BUF[*ATS_len]);
+			#endif
 		}
+		#if 1
 		printk("\n");
+		#endif
+	}else {
+		ret = -1;
 	}
 
 	return ret;
@@ -53,12 +60,13 @@ int PICC_deselect(void)
 	PCD_BUF[0] = 0xCA;
 	PCD_BUF[1] = 0x00;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
+	#if 0
 	printk("DESELECT ret: %d len: %d  ", ret, PCD_CMD.len);
 	for(i=0; i<PCD_CMD.len; i++) {
 		printk("%02X", PCD_BUF[i]);
 	}
 	printk("\n");
-
+	#endif
 	if((ret == 0) && (PCD_CMD.len > 0)) {
 		block_number = !block_number;
 	}
@@ -84,7 +92,7 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 	remain_len = *len;
 	psbuf = psend;
 	prbuf = precv;
-	PCD_BUF[0] = 0xA0;
+	PCD_BUF[0] = 0xA0 | (!block_number);
 	PCD_CMD.len = 2;
 	PCB_R = 0xAA;
 	while(ret == 0) {
@@ -100,7 +108,6 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 				recv_len += cnt - 2;
 			}
 			*len = recv_len;
-			printk("TCL ret: %d len: %d\n", ret, *len);
 			break;
 		}
 		if((PCD_BUF[0] & 0xF0) == 0xA0) {

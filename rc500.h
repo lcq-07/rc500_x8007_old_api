@@ -102,6 +102,17 @@ struct MF_CMD_INFO {
 	unsigned char coll_pos; /* 冲突位置 */
 };
 
+typedef struct {
+	unsigned char MfCommand;   
+	unsigned char MfCtlFlag;  
+	unsigned char MfSector;    
+	unsigned int MfLength;
+	unsigned char MfData[256];  
+	int MfStatus;      
+}TranSciveBuffer;
+
+extern TranSciveBuffer command;
+extern unsigned char PCD_INFO[16];
 extern unsigned char PCD_BUF[FSD];
 extern struct MF_CMD_INFO PCD_CMD;
 
@@ -109,9 +120,11 @@ extern unsigned char PCD_read(unsigned char addr);
 extern void PCD_write(unsigned char addr, unsigned char data);
 extern void PCD_bitset(unsigned char addr, unsigned char bits);
 extern void PCD_bitclr(unsigned char addr, unsigned char bits);
-extern int PCD_init(void);
-extern void PCD_get_info(void);
 extern void PCD_set_timeout(int tmo);
+extern void PCD_antenna(unsigned char ctl);
+extern int PCD_init(void);
+extern int PCD_get_info(void);
 extern int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf);
+extern int sendtoRC500(TranSciveBuffer *send, TranSciveBuffer *receive);
 
 #endif

@@ -1,5 +1,5 @@
-obj-m += sc_reader.o
-sc_reader-objs := rc500_x8007.o gpio_bus_comm.o rc500.o ISO14443_3A.o ISO14443_4A.o
+obj-m += rc500_tda8007b.o
+rc500_tda8007b-objs := rc500_x8007.o gpio_bus_comm.o rc500.o x8007.o ISO14443_3A.o ISO14443_4A.o
 
 KDIR = ../../linux-2.6.32.60
 

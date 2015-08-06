@@ -9,6 +9,7 @@
 
 #include <linux/time.h>
 #include <linux/delay.h>
+#include "debug_print.h"
 #include "gpio_bus_comm.h"
 #include "rc500.h"
 #include "ISO14443_3A.h"
@@ -236,11 +237,12 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 	if(status == 0) {
 		irq_sr = 0;
 		PCD_write(RegInterruptEn, irq_en|0x80);
+		DEBUG_PRINT("W_PCD[% 2d]>> ", cmd_info->len);
 		for(cnt=0; cnt<cmd_info->len; cnt++) {
 			PCD_write(RegFIFOData, buf[cnt]);
-			printk("%02X", buf[cnt]);
+			DEBUG_PRINT("%02X", buf[cnt]);
 		}
-		printk("\n");
+		DEBUG_PRINT("\n");
 		PCD_write(RegCommand, cmd_info->cmd); /* start command */
 
 		guard_cnt = 80000; /* about 800ms */
@@ -252,19 +254,18 @@ int PCD_cmd(struct MF_CMD_INFO *cmd_info, unsigned char *buf)
 		}while(--guard_cnt);
 		err_flg = PCD_read(RegErrorFlag);
 		cmd_info->len = PCD_read(RegFIFOLength);
-		#if 1
-		printk("err_flg: %02X\n", err_flg);
-		printk("fifolen: %d\n", cmd_info->len);
-		printk("irq_sr: %02X\n", irq_sr);
-		printk("wait_for: %02X\n", wait_for);
-		printk("guard_cnt: %d\n", guard_cnt);
-		#endif
+		DEBUG_PRINT("IRQ_SR   : %02X\n", irq_sr);
+		DEBUG_PRINT("ERR_FLG  : %02X\n", err_flg);
+		DEBUG_PRINT("FIFOLEN  : % 2d\n", cmd_info->len);
+		DEBUG_PRINT("WAIT_FOR : %02X\n", wait_for);
+		DEBUG_PRINT("GUARD_CNT: %d\n", guard_cnt);
 		if(guard_cnt) {
+			DEBUG_PRINT("R_PCD[% 2d]<< ", cmd_info->len);
 			for(cnt=0; cnt<cmd_info->len; cnt++) {
 				buf[cnt] = PCD_read(RegFIFOData);
-				printk("%02X", buf[cnt]);
+				DEBUG_PRINT("%02X", buf[cnt]);
 			}
-			printk("\n");
+			DEBUG_PRINT("\n");
 			if(irq_sr & 0x20) { /* timeout */
 				status = -1;
 			}
@@ -353,9 +354,9 @@ int PCD_get_info(void)
 
 	ret = PCD_read_E2(0, 16, PCD_INFO);
 
-	printk("PID: %08X\n", *(unsigned int *)PCD_INFO);
-	printk("VER: %02X\n", PCD_INFO[4]);
-	printk("PSN: %08X\n", *(unsigned int *)(PCD_INFO+8));
+	DEBUG_PRINT("PID: %08X\n", *(unsigned int *)PCD_INFO);
+	DEBUG_PRINT("VER: %02X\n", PCD_INFO[4]);
+	DEBUG_PRINT("PSN: %08X\n", *(unsigned int *)(PCD_INFO+8));
 
 	#if 0
 	struct timespec clock[2];
@@ -365,9 +366,9 @@ int PCD_get_info(void)
 		PCD_write(RegInterruptRq, 0x7f);
 		clock[0] = current_kernel_time();
 		PCD_bitset(RegControl, 0x02);
-		printk("tmr:%d\n", PCD_read(RegTimerValue));
-		printk("rld:%d\n", PCD_read(RegTimerReload));
-		printk("ctl:%d\n", PCD_read(RegTimerControl));
+		DEBUG_PRINT("tmr:%d\n", PCD_read(RegTimerValue));
+		DEBUG_PRINT("rld:%d\n", PCD_read(RegTimerReload));
+		DEBUG_PRINT("ctl:%d\n", PCD_read(RegTimerControl));
 		int cnt;
 		cnt = 0;
 		while(++cnt) {
@@ -377,11 +378,11 @@ int PCD_get_info(void)
 			}
 		}
 		clock[1] = current_kernel_time();
-		printk("clk0:%d %d\n", clock[0].tv_sec, clock[0].tv_nsec);
-		printk("clk1:%d %d\n", clock[1].tv_sec, clock[1].tv_nsec);
-		printk("irq:%02X\n", sta);
+		DEBUG_PRINT("clk0:%d %d\n", clock[0].tv_sec, clock[0].tv_nsec);
+		DEBUG_PRINT("clk1:%d %d\n", clock[1].tv_sec, clock[1].tv_nsec);
+		DEBUG_PRINT("irq:%02X\n", sta);
 		PCD_bitclr(RegControl, 0x04);
-		printk("%d\n", cnt);
+		DEBUG_PRINT("%d\n", cnt);
 	}
 	#endif /* _DEBUG_ */
 

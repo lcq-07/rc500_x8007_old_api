@@ -11,6 +11,7 @@
 
 
 #include <linux/kernel.h>
+#include "debug_print.h"
 #include "rc500.h"
 #include "ISO14443_4A.h"
 
@@ -28,20 +29,14 @@ int PICC_rats(unsigned char *pATS, int *ATS_len)
 	PCD_BUF[0] = 0xE0;
 	PCD_BUF[1] = (FSDI<<4) | 0x00; /* FSDI | CID */
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("RATS ret: %d len: %d  ", ret, PCD_CMD.len);
-	#endif
+	DEBUG_PRINT("RATS[%d] ATS[%d]: ", ret, PCD_CMD.len);
 	if((ret == 0) && (PCD_CMD.len > 0)) {
 		//PCD_write(RegRxWait, 0x00);
 		for(*ATS_len=0; *ATS_len<PCD_CMD.len; (*ATS_len)++) {
 			pATS[*ATS_len] = PCD_BUF[*ATS_len];
-			#if 1
-			printk("%02X", PCD_BUF[*ATS_len]);
-			#endif
+			DEBUG_PRINT("%02X", PCD_BUF[*ATS_len]);
 		}
-		#if 1
-		printk("\n");
-		#endif
+		DEBUG_PRINT("\n");
 	}else {
 		ret = -1;
 	}
@@ -60,13 +55,11 @@ int PICC_deselect(void)
 	PCD_BUF[0] = 0xCA;
 	PCD_BUF[1] = 0x00;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 0
-	printk("DESELECT ret: %d len: %d  ", ret, PCD_CMD.len);
+	DEBUG_PRINT("DESELECT[%d] DATA[%d]: ", ret, PCD_CMD.len);
 	for(i=0; i<PCD_CMD.len; i++) {
-		printk("%02X", PCD_BUF[i]);
+		DEBUG_PRINT("%02X", PCD_BUF[i]);
 	}
-	printk("\n");
-	#endif
+	DEBUG_PRINT("\n");
 	if((ret == 0) && (PCD_CMD.len > 0)) {
 		block_number = !block_number;
 	}
@@ -95,6 +88,7 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 	PCD_BUF[0] = 0xA0 | (!block_number);
 	PCD_CMD.len = 2;
 	PCB_R = 0xAA;
+	DEBUG_PRINT("T=CL >> ");
 	while(ret == 0) {
 		if((PCD_BUF[0] & 0xF0) == 0x00) {
 		/* 通讯结束 */
@@ -161,6 +155,7 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 		break;
 	}
 
+	DEBUG_PRINT("T=CL << ");
 	return ret;	
 }
 #endif

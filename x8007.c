@@ -62,7 +62,7 @@ static int tda8007b_send_byte(char dat)
 		if(++i > 1000) {
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_MSR);
 #ifdef TDA8007B_DEBUG
-			printk("\33[35m[TDA8007B-MSR:%.02x]send byte can not wait 8007 ready\n\33[0m", rd);
+			printk("[TDA8007B-MSR:%.02x]send byte can not wait 8007 ready\n", rd);
 #endif
 			return (-1);
 		}
@@ -81,7 +81,7 @@ static int tda8007b_send_byte(char dat)
 	udelay(10);
 //#ifdef TDA8007B_DEBUG
 #if 0
-	printk("\33[35m[%.02x] send\n\33[0m", dat);
+	printk("[%.02x] send\n", dat);
 #endif
 	return 0;
 }
@@ -97,7 +97,7 @@ static int tda8007b_send_last_byte(char dat)
 		if(++i > 1000) {
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_MSR);
 #ifdef TDA8007B_DEBUG
-			printk("\33[35m[TDA8007B-MSR:%.02x]send byte can not wait 8007 ready\n\33[0m", rd);
+			printk("[TDA8007B-MSR:%.02x]send byte can not wait 8007 ready\n", rd);
 #endif
 			return (-1);
 		}
@@ -122,7 +122,7 @@ static int tda8007b_send_last_byte(char dat)
 	udelay(10);
 //#ifdef TDA8007B_DEBUG
 #if 0
-	printk("\33[35m[%.02x] last send\n\33[0m", dat);
+	printk("[%.02x] last send\n", dat);
 #endif
 	return 0;
 }
@@ -138,7 +138,7 @@ static int tda8007b_recv_byte(char *dat)
 		if(++i > 100) {
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_MSR);
 #ifdef TDA8007B_DEBUG
-			printk("\33[35m[MSR:%.02x]set timer can not wait 8007 ready\n\33[0m", rd);
+			printk("[MSR:%.02x]set timer can not wait 8007 ready\n", rd);
 #endif
 			return (-1);
 		}
@@ -156,7 +156,7 @@ static int tda8007b_recv_byte(char *dat)
 		*dat = gpio_bus_read(DEV_TDA8007B, TDA8007B_URR);
 		//udelay(200);
 #ifdef TDA8007B_DEBUG
-		printk("\33[35m[%.02x] recv\n\33[0m", *dat);
+		printk("[%.02x] recv\n", *dat);
 #endif
 		rd = 0;
 	}
@@ -173,7 +173,7 @@ static int tda8007b_set_timer(char toc, char tor1, char tor2, char tor3)
 		if(++i > 100) {
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_MSR);
 #ifdef TDA8007B_DEBUG
-			printk("\33[35m[TDA8007B-MSR:%.02x]set timer can not wait 8007 ready\n\33[0m", rd);
+			printk("[TDA8007B-MSR:%.02x]set timer can not wait 8007 ready\n", rd);
 #endif
 			return (-1);
 		}
@@ -188,7 +188,7 @@ static int tda8007b_set_timer(char toc, char tor1, char tor2, char tor3)
 		if(++i > 100) {
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_MSR);
 #ifdef TDA8007B_DEBUG
-			printk("\33[35m[TDA8007B-MSR:%.02x]set timer can not wait 8007 ready\n\33[0m", rd);
+			printk("[TDA8007B-MSR:%.02x]set timer can not wait 8007 ready\n", rd);
 #endif
 			return (-1);
 		}
@@ -232,7 +232,7 @@ void tda8007b_init(void)
 	tda8007b_select_card(1);
 	rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_CSR);
 #ifdef TDA8007B_DEBUG
-	printk("\33[35m[TDA8007B-CSR:%.2x]\n\33[0m", rd);
+	printk("[TDA8007B-CSR:%.2x]\n", rd);
 #endif
 	
 	// Compile time setting of operating crystal frequency
@@ -263,7 +263,7 @@ void tda8007b_init(void)
 			break;
 		}
 		if(++i>100) {
-			printk("\33[35m[8007-MSR:%.02x]clock problem detected\n\33[0m", rd);
+			printk("[8007-MSR:%.02x]clock problem detected\n", rd);
 			return;
 		}
 		mdelay(1);
@@ -283,7 +283,7 @@ warm_rst:
 		//gpio_bus_write(DEV_TDA8007B, TDA8007B_PCR, (rd&~0x3e)|0x9);//1.8V
 		rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_HSR);
 		if(rd & (0x6d)) {
-			printk("\33[35m[TDA8007B-HSR:%.02x]power problem detected\n\33[0m", rd);
+			printk("[TDA8007B-HSR:%.02x]power problem detected\n", rd);
 			return;
 		}
 		rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_PCR);
@@ -310,7 +310,7 @@ warm_rst:
 	gpio_bus_write(DEV_TDA8007B, TDA8007B_PCR, rd|0x04);
 	rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_PCR);
 #ifdef TDA8007B_DEBUG
-	printk("\33[35m[TDA8007B-PCR:%.02x]\n\33[0m", rd);
+	printk("[TDA8007B-PCR:%.02x]\n", rd);
 #endif
 	//gpio_bus_write(DEV_TDA8007B, TDA8007B_GTR, 0xff);
 	//毅能达
@@ -328,7 +328,7 @@ warm_rst:
 		}
 		rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_USR);
 		if(rd & 0x1e) {
-			printk("\33[35m[%d][TDA8007B-USR:%.02x] error\n\33[0m", __LINE__, rd);
+			printk("[%d][TDA8007B-USR:%.02x] error\n", __LINE__, rd);
 			if(warm_rst_ctl == 0) {
 				warm_rst_ctl++;
 				goto warm_rst;
@@ -336,7 +336,7 @@ warm_rst:
 			return;
 		}
 		if(rd & 0x80) {
-			printk("\33[35m[%d]wait ATR timeout\n\33[0m", __LINE__);
+			printk("[%d]wait ATR timeout\n", __LINE__);
 			if(warm_rst_ctl == 0) {
 				warm_rst_ctl++;
 				goto warm_rst;
@@ -350,7 +350,7 @@ warm_rst:
 		}
 	}
 	//get ATR
-	printk("\33[35mwait: %d\nATR: \n\33[0m", i);
+	printk("wait: %d\nATR: \n", i);
 	//set recv timer
 	
 	i = 0;
@@ -367,10 +367,10 @@ warm_rst:
 			rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_URR);
 			ATR[idx++] = rd;
 			if (idx == 1) {
-				printk("\33[35mTS : %02x\n\33[0m", rd);
+				printk("TS : %02x\n", rd);
 				if((rd != 0x3f) && (rd != 0x3b)) {
 #ifdef TDA8007B_DEBUG
-					printk("\33[35m[%d]wrong\n\33[0m", __LINE__);
+					printk("[%d]wrong\n", __LINE__);
 #endif
 					return;
 				}
@@ -379,7 +379,7 @@ warm_rst:
 			if (idx == 2) {
 				historicalBytes = rd & 0x0F;
 				expectedCharacters = rd & 0xF0;
-				printk("\33[35mT0 : %.02x\n\33[0m", rd);
+				printk("T0 : %.02x\n", rd);
 			}
 
 			if (idx > 2){
@@ -390,12 +390,12 @@ warm_rst:
 					if (historicalBytes == 0){
 						done = 1;
 					}
-					printk("\33[35mHIS: %.02x\n\33[0m", rd);
+					printk("HIS: %.02x\n", rd);
 					break;
 				case 0x01:
 					// TCK case
 					done = 1;
-					printk("\33[35mTCK: %.02x\n\33[0m", rd);
+					printk("TCK: %.02x\n", rd);
 					break;
 
 				case 0x10:
@@ -408,7 +408,7 @@ warm_rst:
 				case 0xF0:
 					// TA case
 					expectedCharacters &= 0xE0;
-					printk("\33[35mTA%d: %.02x\n\33[0m", TAn, rd);
+					printk("TA%d: %.02x\n", TAn, rd);
 					TAn += 1;
 					break;
 
@@ -418,7 +418,7 @@ warm_rst:
 				case 0xE0:
 					// TB case
 					expectedCharacters &= 0xD0;
-					printk("\33[35mTB%d: %.02x\n\33[0m", TBn, rd);
+					printk("TB%d: %.02x\n", TBn, rd);
 					TBn += 1;
 					break;
 
@@ -429,14 +429,14 @@ warm_rst:
 					if(TCn == 1) {
 						GTR = rd;
 					}
-					printk("\33[35mTC%d: %.02x\n\33[0m", TCn, rd);
+					printk("TC%d: %.02x\n", TCn, rd);
 					TCn += 1;
 					break;
 
 				case 0x80:
 					// TD case
 					expectedCharacters=(rd&0xF0);
-					printk("\33[35mTD%d: %.02x\n\33[0m", TDn, rd);
+					printk("TD%d: %.02x\n", TDn, rd);
 					TDn += 1;
 					if ((expectedCharacters == 0x00) && (historicalBytes == 0)){
 						done = 1;
@@ -450,7 +450,7 @@ warm_rst:
 			//udelay(10);
 			if(++i > 20000) {
 #ifdef TDA8007B_DEBUG
-				printk("\33[35m[%d]recv ATR abort\n\33[0m", __LINE__);
+				printk("[%d]recv ATR abort\n", __LINE__);
 #endif
 				done = 1;;
 			}
@@ -462,7 +462,7 @@ warm_rst:
 	//set pram accord ATR
 	rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_UCR1);
 #ifdef TDA8007B_DEBUG
-	printk("\33[35m[TDA8007B-UCR1:%.02x]\n\33[0m", rd);
+	printk("[TDA8007B-UCR1:%.02x]\n", rd);
 #endif
 	gpio_bus_write(DEV_TDA8007B, TDA8007B_UCR1, rd&~0x10);
 	gpio_bus_write(DEV_TDA8007B, TDA8007B_GTR, GTR);
@@ -508,7 +508,7 @@ problem_occur:
 	}
 
 #ifdef TDA8007B_DEBUG
-	printk("\33[35m[INS:%.02x][Lc:%.02x][Le:%.02x][APDU_Len:%d]\n\33[0m", apdu_INS, apdu_Lc, apdu_Le, apdu_len);
+	printk("[INS:%.02x][Lc:%.02x][Le:%.02x][APDU_Len:%d]\n", apdu_INS, apdu_Lc, apdu_Le, apdu_len);
 #endif
 #if 1
 	for(cnt=0; cnt<4; cnt++) {
@@ -593,7 +593,7 @@ problem_occur:
 		}
 	}while(++cnt<30000);
 #ifdef TDA8007B_DEBUG
-	printk("\33[35mtry[%d]\n\33[0m", cnt);
+	printk("try[%d]\n", cnt);
 #endif
 /*
 	if((command.MfData[0]==apdu_INS) && (command.MfLength>2)) {

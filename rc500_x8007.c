@@ -13,6 +13,7 @@
 #include <linux/device.h>
 #include <linux/miscdevice.h>
 #include <asm/uaccess.h> /* copy_to/from_user */
+#include "debug_print.h"
 #include "rc500_x8007.h"
 #include "gpio_bus_comm.h"
 #include "rc500.h"
@@ -150,9 +151,9 @@ static int __init dev_init(void)
 	if(ret == 0){
 		init_MUTEX(&read_write);
 		init_MUTEX(&open_close);
-		printk("Insmod RC500 OK.\n");
+		printk("Insmod MFRC500 and X8007 OK.\n");
 	}else {
-		printk("Insmod RC500 failed.\n");
+		printk("Insmod MFRC500 and X8007.\n");
 	}
 	return ret;
 }

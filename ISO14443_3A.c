@@ -7,6 +7,7 @@
  */
 
 #include <linux/kernel.h>
+#include "debug_print.h"
 #include "rc500.h"
 #include "ISO14443_3A.h"
 
@@ -27,10 +28,7 @@ int PICC_request(unsigned char req_code, unsigned char *ATQ)
 	PCD_CMD.len = 1;
 	PCD_BUF[0] = req_code;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("REQUEST ret:%d\n", ret);
-	printk("ATQ:%02X%02X\n", PCD_BUF[1], PCD_BUF[0]);
-	#endif
+	DEBUG_PRINT("REQUEST[%d] ATQ[%d]: %02X%02X\n", ret, PCD_CMD.len, PCD_BUF[1], PCD_BUF[0]);
 	if((ret == 0)&&(PCD_CMD.len == 2)) {
 		/* 2 bytes expected */
 		ATQ[0] = PCD_BUF[0];
@@ -58,10 +56,8 @@ int PICC_anticoll(unsigned char *picc_uid)
 	PCD_BUF[0] = ISO14443_SEL1;
 	PCD_BUF[1] = 0x20;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("ANTICOLL ret:%d len:%d\n", ret, PCD_CMD.len);
-	printk("UID:%02X%02X%02X%02X%02X\n", PCD_BUF[0], PCD_BUF[1], PCD_BUF[2], PCD_BUF[3], PCD_BUF[4]);
-	#endif
+	DEBUG_PRINT("ANTICOLL[%d] UID[%d]: %02X%02X%02X%02X%02X\n", ret, PCD_CMD.len, 
+		PCD_BUF[0], PCD_BUF[1], PCD_BUF[2], PCD_BUF[3], PCD_BUF[4]);
 	if((ret == 0)&&(PCD_CMD.len == 5)) {
 		picc_uid[0] = PCD_BUF[0];
 		picc_uid[1] = PCD_BUF[1];
@@ -94,10 +90,7 @@ int PICC_select(unsigned char *picc_uid, unsigned char *sak)
 	PCD_BUF[4] = picc_uid[2]; PCD_BUF[6] ^= picc_uid[2];
 	PCD_BUF[5] = picc_uid[3]; PCD_BUF[6] ^= picc_uid[3];
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("SELECT ret:%d len:%d\n", ret, PCD_CMD.len);
-	printk("SAK:%02X\n", PCD_BUF[0]);
-	#endif
+	DEBUG_PRINT("SELECT[%d] SAK[%d]: %02X\n", ret, PCD_CMD.len, PCD_BUF[0]);
 	if((ret == 0)&&(PCD_CMD.len == 1)) {
 		sak[0] = PCD_BUF[0];
 		PICC_UID[0] = picc_uid[0];
@@ -121,9 +114,7 @@ int PICC_halt(void)
 	PCD_BUF[0] = ISO14443_HLTA;
 	PCD_BUF[1] = 0x00;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 0
-	printk("HALT ret: %d\n", ret);
-	#endif
+	DEBUG_PRINT("HALT[%d]\n", ret);
 	PCD_write(RegCommand, PCD_IDLE);
 
 	return ret;
@@ -137,6 +128,7 @@ int PICC_MFauth(unsigned char key_type, unsigned char block, unsigned char *key)
 	unsigned char hn;
 	unsigned char sta;
 
+	
 	PCD_CMD.cmd = PCD_LOADKEY;
 	PCD_CMD.len = 12;
 	/* 密钥转换为RC500内部格式 */
@@ -146,18 +138,13 @@ int PICC_MFauth(unsigned char key_type, unsigned char block, unsigned char *key)
 		PCD_BUF[(ret<<1)+1] = (~ln << 4) | ln;
 		PCD_BUF[(ret<<1)]   = (~hn << 4) | hn;
 	}
-	#if 0
-	for(ret=0; ret<12; ret++) {
-		printk("%02X", PCD_BUF[ret]);
-	}
-	printk("\n");
-	#endif
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 	sta = PCD_read(RegErrorFlag);
-	#if 1
-	printk("LOADKEY ret: %d len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
-	#endif
+	DEBUG_PRINT("LOADKEY[%d] len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
+	
 	if((ret == 0) && (sta == 0)) {
+		PCD_set_timeout(3);
+		PCD_write(RegChannelRedundancy, 0x07); /* TxCRC, Parity enable */
 		PCD_CMD.cmd = PCD_AUTHENT1;
 		PCD_CMD.len = 6;
 		PCD_BUF[0] = key_type;
@@ -168,17 +155,13 @@ int PICC_MFauth(unsigned char key_type, unsigned char block, unsigned char *key)
 		PCD_BUF[5] = PICC_UID[3];
 		ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 		sta = PCD_read(RegSecondaryStatus);
-		#if 1
-		printk("AUTHENT1 ret: %d len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
-		#endif
+		DEBUG_PRINT("AUTHENT1[%d] len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
 		if((ret == 0) && ((sta&0x07) == 0)) {
 			PCD_CMD.cmd = PCD_AUTHENT2;
 			PCD_CMD.len = 0;
 			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 			sta = PCD_read(RegControl);
-			#if 1
-			printk("AUTHENT2 ret: %d len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
-			#endif
+			DEBUG_PRINT("AUTHENT2 [%d] len: %d sta: %02X\n", ret, PCD_CMD.len, sta);
 			if((ret == 0) && ((sta&0x08) == 0x08)) {
 				/* Crypto1 activated */
 			}else {
@@ -206,9 +189,7 @@ int PICC_MFread(unsigned block, unsigned char *buf)
 	PCD_BUF[0] = PICC_MFREAD;
 	PCD_BUF[1] = block;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("MFREAD ret: %d len: %d\n", ret, PCD_CMD.len);
-	#endif
+	DEBUG_PRINT("MFREAD[%d] len: %d\n", ret, PCD_CMD.len);
 	if((ret == 0) && (PCD_CMD.len == 16)) {
 		buf[0] = PCD_BUF[0]; buf[8] = PCD_BUF[8];
 		buf[1] = PCD_BUF[1]; buf[9] = PCD_BUF[9];
@@ -231,16 +212,14 @@ int PICC_MFwrite(unsigned block, unsigned char *buf)
 {
 	int ret;
 	
-	//PCD_write(RegChannelRedundancy, 0x07); /* TxCRC, Parity enable */
+	PCD_write(RegChannelRedundancy, 0x07); /* TxCRC, Parity enable */
 	PCD_set_timeout(4);
 	PCD_CMD.cmd = PCD_TRANSCEIVE;
 	PCD_CMD.len = 2;
 	PCD_BUF[0] = PICC_MFWRITE;
 	PCD_BUF[1] = block;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	#if 1
-	printk("MFWRITE1 ret: %d recv_bit: %d[%02X]\n", ret, PCD_CMD.recv_bit, PCD_BUF[0]);
-	#endif
+	DEBUG_PRINT("MFWRITE1[%d] recv_bit: %d[%02X]\n", ret, PCD_CMD.recv_bit, PCD_BUF[0]);
 	if((ret == 0) && (PCD_CMD.recv_bit == 4) && ((PCD_BUF[0]&0x0f) == 0x0a)) {
 		PCD_set_timeout(4);
 		PCD_CMD.cmd = PCD_TRANSCEIVE;
@@ -254,9 +233,7 @@ int PICC_MFwrite(unsigned block, unsigned char *buf)
                 PCD_BUF[6] = buf[6]; PCD_BUF[14] = buf[14];
                 PCD_BUF[7] = buf[7]; PCD_BUF[15] = buf[15];
 		ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-		#if 1
-		printk("MFWRITE2 ret: %d recv_bit: %d[%02X]\n", ret, PCD_CMD.recv_bit, PCD_BUF[0]);
-		#endif
+		DEBUG_PRINT("MFWRITE2[%d] recv_bit: %d[%02X]\n", ret, PCD_CMD.recv_bit, PCD_BUF[0]);
 		if((ret == 0) && (PCD_CMD.recv_bit == 4) && ((PCD_BUF[0]&0x0f) == 0x0a)) {
 		}else {
 			ret = -1;

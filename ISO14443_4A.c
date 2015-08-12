@@ -90,6 +90,14 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 	PCB_R = 0xAA;
 	DEBUG_PRINT("T=CL >> ");
 	while(ret == 0) {
+		if((PCD_BUF[0] & 0xF0) == 0xF0) {
+		/* S_Block WTX */
+			PCD_BUF[2] &= 0x3F;
+			PCD_CMD.len = 3;
+			PCD_CMD.cmd = PCD_TRANSCEIVE;
+			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
+			continue;
+		}
 		if((PCD_BUF[0] & 0xF0) == 0x00) {
 		/* 通讯结束 */
 			if((PCD_BUF[0]&0x01) == block_number) {

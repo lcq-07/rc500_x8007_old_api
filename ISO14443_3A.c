@@ -28,7 +28,7 @@ int PICC_request(unsigned char req_code, unsigned char *ATQ)
 	PCD_CMD.len = 1;
 	PCD_BUF[0] = req_code;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	DEBUG_PRINT("REQUEST[%d] ATQ[%d]: %02X%02X\n", ret, PCD_CMD.len, PCD_BUF[1], PCD_BUF[0]);
+	//DEBUG_PRINT("REQUEST[%d] ATQ[%d]: %02X%02X\n", ret, PCD_CMD.len, PCD_BUF[1], PCD_BUF[0]);
 	if((ret == 0)&&(PCD_CMD.len == 2)) {
 		/* 2 bytes expected */
 		ATQ[0] = PCD_BUF[0];
@@ -56,8 +56,8 @@ int PICC_anticoll(unsigned char *picc_uid)
 	PCD_BUF[0] = ISO14443_SEL1;
 	PCD_BUF[1] = 0x20;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	DEBUG_PRINT("ANTICOLL[%d] UID[%d]: %02X%02X%02X%02X%02X\n", ret, PCD_CMD.len, 
-		PCD_BUF[0], PCD_BUF[1], PCD_BUF[2], PCD_BUF[3], PCD_BUF[4]);
+	//DEBUG_PRINT("ANTICOLL[%d] UID[%d]: %02X%02X%02X%02X%02X\n", ret, PCD_CMD.len, 
+	//	PCD_BUF[0], PCD_BUF[1], PCD_BUF[2], PCD_BUF[3], PCD_BUF[4]);
 	if((ret == 0)&&(PCD_CMD.len == 5)) {
 		picc_uid[0] = PCD_BUF[0];
 		picc_uid[1] = PCD_BUF[1];
@@ -90,7 +90,7 @@ int PICC_select(unsigned char *picc_uid, unsigned char *sak)
 	PCD_BUF[4] = picc_uid[2]; PCD_BUF[6] ^= picc_uid[2];
 	PCD_BUF[5] = picc_uid[3]; PCD_BUF[6] ^= picc_uid[3];
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	DEBUG_PRINT("SELECT[%d] SAK[%d]: %02X\n", ret, PCD_CMD.len, PCD_BUF[0]);
+	//DEBUG_PRINT("SELECT[%d] SAK[%d]: %02X\n", ret, PCD_CMD.len, PCD_BUF[0]);
 	if((ret == 0)&&(PCD_CMD.len == 1)) {
 		sak[0] = PCD_BUF[0];
 		PICC_UID[0] = picc_uid[0];
@@ -114,7 +114,7 @@ int PICC_halt(void)
 	PCD_BUF[0] = ISO14443_HLTA;
 	PCD_BUF[1] = 0x00;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
-	DEBUG_PRINT("HALT[%d]\n", ret);
+	//DEBUG_PRINT("HALT[%d]\n", ret);
 	PCD_write(RegCommand, PCD_IDLE);
 
 	return ret;
@@ -172,6 +172,10 @@ int PICC_MFauth(unsigned char key_type, unsigned char block, unsigned char *key)
 		}
 	}else {
 		ret = -1;
+	}
+
+	if(ret) {
+		PCD_bitclr(RegControl, 0x08); /* disable crypto 1 unit */
 	}
 
 	return ret;

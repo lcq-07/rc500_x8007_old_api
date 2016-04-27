@@ -16,9 +16,19 @@
 #define PSAM_STA_ERR	1
 
 static char psam_sta; 
-#if 1
+#if 0
 #define TDA8007B_DEBUG
 #endif
+
+static const unsigned int TA1_F[][2] = {
+{372, 4}, {372, 5}, {558, 6}, {744, 8}, 
+{1116, 12}, {1488, 16}, {1860, 20}, {0, 0},
+{0, 0}, {512, 5}, {768, 5}, {1024, 10},
+{1536, 15}, {2048, 20}, {0, 0}, {0, 0}};
+static const unsigned char TA1_D[] = {
+0, 1, 2, 4, 8, 16, 32, 64, 
+12, 20, 0, 0, 0, 0, 0, 0
+};
 
 static inline void tda8007b_select_card(char num)
 {
@@ -204,7 +214,9 @@ void tda8007b_init(void)
 	char rd;
 	char warm_rst_ctl;
 	char ATR[64];
+	char PPSS[8];
 	char GTR;
+	char TA1 = 0;
 	char done;
 	char historicalBytes = 0;
 	char expectedCharacters = 0;
@@ -408,7 +420,10 @@ warm_rst:
 				case 0xF0:
 					// TA case
 					expectedCharacters &= 0xE0;
-					printk("TA%d: %.02x\n", TAn, rd);
+					printk("TA%d: %.02x\n", TAn+1, rd);
+					if(TAn == 0) {
+						TA1 = rd;
+					}
 					TAn += 1;
 					break;
 
@@ -418,7 +433,7 @@ warm_rst:
 				case 0xE0:
 					// TB case
 					expectedCharacters &= 0xD0;
-					printk("TB%d: %.02x\n", TBn, rd);
+					printk("TB%d: %.02x\n", TBn+1, rd);
 					TBn += 1;
 					break;
 
@@ -429,14 +444,14 @@ warm_rst:
 					if(TCn == 1) {
 						GTR = rd;
 					}
-					printk("TC%d: %.02x\n", TCn, rd);
+					printk("TC%d: %.02x\n", TCn+1, rd);
 					TCn += 1;
 					break;
 
 				case 0x80:
 					// TD case
 					expectedCharacters=(rd&0xF0);
-					printk("TD%d: %.02x\n", TDn, rd);
+					printk("TD%d: %.02x\n", TDn+1, rd);
 					TDn += 1;
 					if ((expectedCharacters == 0x00) && (historicalBytes == 0)){
 						done = 1;
@@ -460,6 +475,24 @@ warm_rst:
 		return;
 	}
 	//set pram accord ATR
+#if 0
+	if(TA1) {
+		tda8007b_send_byte(0xFF);
+		tda8007b_send_byte(0x10);
+		tda8007b_send_byte(TA1);
+		tda8007b_send_last_byte(0xFF^0x10^TA1);
+		tda8007b_recv_byte(PPSS+0);
+		tda8007b_recv_byte(PPSS+1);
+		tda8007b_recv_byte(PPSS+2);
+		tda8007b_recv_byte(PPSS+3);
+		//if(PPSS[0]==0xFF && PPSS[1]==0x10 && PPSS[2]==0x18) {
+			gpio_bus_write(DEV_TDA8007B, TDA8007B_PDR, 1);//divisor
+		//}
+#ifdef TDA8007B_DEBUG
+		printk("PPSS: %02X%02X%02X%02X\n", PPSS[0], PPSS[1], PPSS[2], PPSS[3]);
+#endif
+	}
+#endif
 	rd = gpio_bus_read(DEV_TDA8007B, TDA8007B_UCR1);
 #ifdef TDA8007B_DEBUG
 	printk("[TDA8007B-UCR1:%.02x]\n", rd);

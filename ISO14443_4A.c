@@ -17,10 +17,14 @@
 
 unsigned int FSC = 0; /* 卡片处理帧长度 */
 unsigned char block_number;
+unsigned char PICC_CID_EN; /* 卡片是否支持CID */
 
 int PICC_rats(unsigned char *pATS, int *ATS_len)
 {
 	int ret;
+	int pos;
+	unsigned char T0;
+	unsigned char TC1;
 
 	block_number = 0;
 	PCD_set_timeout(5);
@@ -37,6 +41,22 @@ int PICC_rats(unsigned char *pATS, int *ATS_len)
 			DEBUG_PRINT("%02X", PCD_BUF[*ATS_len]);
 		}
 		DEBUG_PRINT("\n");
+		T0 = pATS[1];
+		pos = 2;
+		if(T0 & 0x10) { /* check TA bit */
+			pos += 1;
+		}
+		if(T0 & 0x20) { /* check TB bit */
+			pos += 1;
+		}
+		if(T0 & 0x40) { /* check TC bit */
+			if(pATS[pos] & 0x02) {
+				PICC_CID_EN = 0x08;
+				DEBUG_PRINT("CID detect: %02X\n", pATS[pos]);
+			} else {
+				PICC_CID_EN = 0x00;
+			}
+		}
 	}else {
 		ret = -1;
 	}
@@ -51,8 +71,8 @@ int PICC_deselect(void)
 
 	PCD_set_timeout(3);
 	PCD_CMD.cmd = PCD_TRANSCEIVE;
-	PCD_CMD.len = 2;
-	PCD_BUF[0] = 0xCA;
+	PCD_CMD.len = PICC_CID_EN? 2:1;
+	PCD_BUF[0] = 0xC2 | PICC_CID_EN;
 	PCD_BUF[1] = 0x00;
 	ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 	DEBUG_PRINT("DESELECT[%d] DATA[%d]: ", ret, PCD_CMD.len);
@@ -68,8 +88,6 @@ int PICC_deselect(void)
 }
 
 #if 1
-/* 以下实现中I-block均含CID */
-/* PCB [CID NAD] INF [CRC_A_LSB CRC_A_MSB] */
 int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 {
 	int ret = 0;
@@ -86,14 +104,19 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 	psbuf = psend;
 	prbuf = precv;
 	PCD_BUF[0] = 0xA0 | (!block_number);
-	PCD_CMD.len = 2;
-	PCB_R = 0xAA;
+	PCD_CMD.len = PICC_CID_EN? 2:1;
+	PCB_R = 0xA2 | PICC_CID_EN;
 	DEBUG_PRINT("T=CL >> ");
 	while(ret == 0) {
 		if((PCD_BUF[0] & 0xF0) == 0xF0) {
 		/* S_Block WTX */
-			PCD_BUF[2] &= 0x3F;
-			PCD_CMD.len = 3;
+			if(PICC_CID_EN) {
+				PCD_BUF[2] &= 0x3F;
+				PCD_CMD.len = 3;
+			} else {
+				PCD_BUF[1] &= 0x3F;
+				PCD_CMD.len = 2;
+			}
 			PCD_CMD.cmd = PCD_TRANSCEIVE;
 			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 			continue;
@@ -103,11 +126,17 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 			if((PCD_BUF[0]&0x01) == block_number) {
 				block_number = !block_number;
 			}
-			for(cnt=2; cnt<PCD_CMD.len; cnt++) {
+			for(cnt=PICC_CID_EN?2:1; cnt<PCD_CMD.len; cnt++) {
 				*prbuf++ = PCD_BUF[cnt];
 			}
-			if(cnt > 2) {
-				recv_len += cnt - 2;
+			if(PICC_CID_EN) {
+				if(cnt > 2) {
+					recv_len += cnt - 2;
+				}
+			} else {
+				if(cnt > 1) {
+					recv_len += cnt - 1;
+				}
 			}
 			*len = recv_len;
 			break;
@@ -117,20 +146,27 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 			if((PCD_BUF[0]&0x01) == block_number) {
 				block_number = !block_number;
 			}
-			send_len = FSD - 2;
+			send_len = FSD - (PICC_CID_EN?2:1);
 			if(remain_len <= send_len) {
 			/* 最后一块，清chaining位*/
 				send_len = remain_len;
-				PCD_BUF[0] = 0x0A ^ block_number;
+				PCD_BUF[0] = (0x02 | PICC_CID_EN) ^ block_number;
 			}else {
 			/* 还有后续块，置chaining位*/
-				PCD_BUF[0] = 0x1A ^ block_number;
+				PCD_BUF[0] = (0x12 | PICC_CID_EN) ^ block_number;
 			}
 			remain_len -= send_len;
-			PCD_CMD.len = send_len + 2;
-			PCD_BUF[1] = 0x00; /* CID */
-			for(cnt=0; cnt< send_len; cnt++) {
-				PCD_BUF[2+cnt] = *psbuf++;
+			if(PICC_CID_EN) {
+				PCD_CMD.len = send_len + 2;
+				PCD_BUF[1] = 0x00; /* CID */
+				for(cnt=0; cnt< send_len; cnt++) {
+					PCD_BUF[2+cnt] = *psbuf++;
+				}
+			} else {
+				PCD_CMD.len = send_len + 1;
+				for(cnt=0; cnt< send_len; cnt++) {
+					PCD_BUF[1+cnt] = *psbuf++;
+				}
 			}
 			PCD_CMD.cmd = PCD_TRANSCEIVE;
 			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
@@ -141,11 +177,17 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 			if((PCD_BUF[0]&0x01) == block_number) {
 				block_number = !block_number;
 			}
-			for(cnt=2; cnt<PCD_CMD.len; cnt++) {
+			for(cnt=PICC_CID_EN?2:1; cnt<PCD_CMD.len; cnt++) {
 				*prbuf++ = PCD_BUF[cnt];
 			}
-			if(cnt > 2) {
-				recv_len += cnt - 2;
+			if(PICC_CID_EN) {
+				if(cnt > 2) {
+					recv_len += cnt - 2;
+				}
+			} else {
+				if(cnt > 1) {
+					recv_len += cnt - 1;
+				}
 			}
 			if(PCD_BUF[0] & 0x01) {
 				PCB_R &= 0xFE;
@@ -154,7 +196,7 @@ int PICC_tcl(unsigned char *psend, unsigned char *precv, int *len)
 			}
 			PCD_BUF[0] = PCB_R;
 			PCD_BUF[1] = 0x00; /* CID */
-			PCD_CMD.len = 2;
+			PCD_CMD.len = PICC_CID_EN? 2 : 1;
 			PCD_CMD.cmd = PCD_TRANSCEIVE;
 			ret = PCD_cmd(&PCD_CMD, PCD_BUF);
 			continue;
